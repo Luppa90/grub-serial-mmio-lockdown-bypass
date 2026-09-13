@@ -25,6 +25,14 @@ sibling-image execution, and cross-build exploitability are not claimed.
 
 - [`ADVISORY.txt`](ADVISORY.txt): complete, self-contained public advisory and
   reproduction sequence
+- [`poc/README.md`](poc/README.md): exact-image PoC recipe, prerequisites, and
+  stop condition
+- [`poc/grub-candidate.cfg`](poc/grub-candidate.cfg): exact GRUB configuration
+  used in the reproduced run
+- [`poc/make-marker.py`](poc/make-marker.py): recreates the exact benign test
+  module from the hash-pinned stock Ubuntu `hello.mod`
+- [`evidence/candidate-console.txt`](evidence/candidate-console.txt): matching
+  console receipt for the published configuration
 - [`evidence/01-unsigned-efi-firmware-denial.png`](evidence/01-unsigned-efi-firmware-denial.png):
   firmware denial of an unsigned EFI control
 - [`evidence/02-pre-transition-negative-controls.png`](evidence/02-pre-transition-negative-controls.png):
@@ -34,9 +42,10 @@ sibling-image execution, and cross-build exploitability are not claimed.
 - [`SHA256SUMS`](SHA256SUMS): integrity manifest for the published files
 
 The public materials intentionally omit signed binaries, firmware images,
-mutable VARS files, and the unsigned test module. The advisory identifies the
-exact tested image by package version and SHA-256 and includes the decisive
-configuration sequence.
+mutable VARS files, and the modified test-module binary. The PoC helper
+recreates that benign module from the exact stock Ubuntu module after verifying
+its input and output hashes. The advisory identifies the exact tested signed
+image by package version and SHA-256.
 
 ## Integrity
 
