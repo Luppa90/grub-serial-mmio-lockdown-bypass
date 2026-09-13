@@ -1,0 +1,199 @@
+To:      oss-security@lists.openwall.com
+Subject: GNU GRUB 2.14: serial-MMIO lockdown bypass in Canonical-signed gcdx64.efi
+
+== Overview ==
+
+Canonical-signed GRUB2 (grub-efi-amd64-signed), when admitted by UEFI
+Secure Boot and reporting lockdown=y, exposes a serial command that accepts
+a caller-supplied 64-bit MMIO base address. The lockdown path does not
+restrict this command, and the serial implementation does not validate that
+the requested register span belongs to a real UART rather than ordinary RAM.
+
+A local attacker with control of GRUB's boot configuration can use the
+lockdown-available "gdbinfo" command to recover the image base, point the
+serial MMIO base at GRUB's authoritative grub_file_verifiers list head, and
+trigger input-only serial initialization. The fixed UART initialization
+stores clear that list head. GRUB's empty-verifier-list behavior then fails
+open, admitting unsigned GRUB modules while lockdown still reports y.
+
+Exploitation requires control of a GRUB configuration source accepted without
+configuration authentication, control of or ability to select that boot path,
+continued shim/SBAT admission of the affected image, a structurally valid
+unsigned native GRUB module, knowledge of the loaded image placement, and a
+serial input poll. Administrator-controlled boot configuration or controlled
+removable media are representative routes; root or physical access alone does
+not establish every prerequisite. This is not a remote or ordinary-user vector.
+
+== Affected ==
+
+Product:            GNU GRUB (GRUB2)
+Confirmed image:    Ubuntu grub-efi-amd64-signed 1.215+2.14-2ubuntu1
+                    gcdx64.efi.signed SHA-256:
+                    dc505a15c1bd97878eede212a052a1bfb2f610176a5401a3679877c536fdcd62
+Underlying build:   grub2 2.14-2ubuntu1
+SBAT:               grub,5; grub.ubuntu,2; grub.ubuntu26,1; grub.peimage,2
+Architecture:       x86-64
+
+The sibling images grubx64.efi.signed and grubnetx64.efi.signed from the
+same package share the relevant .text, .data, serial implementation, and
+lockdown command set. They are static audit candidates only; live reproduction
+used only gcdx64.efi.signed.
+
+The serial MMIO implementation is upstream GRUB code (grub-core/term/ns8250.c
+and grub-core/term/serial.c), present in source versions containing ns8250
+MMIO serial support. Other signed builds containing the same path and lockdown
+command set require audit; this advisory does not claim cross-build or
+cross-distribution reproduction. No claim is made for arm64 or other
+architectures without independent verification.
+
+Outside confirmed scope:
+                    Any build other than the exact gcdx64.efi.signed image
+                    identified above, and all physical-hardware deployments.
+
+== Root cause ==
+
+GRUB2's serial command, when given --port=mmio,<address>.q, passes the
+address directly to the serial MMIO driver without validating that it falls
+within a legitimate UART resource. Under lockdown, neither the serial
+command nor the gdbinfo command is restricted. The serial initialization
+sequence writes fixed UART-derived values (IER, LCR, DLL, DLM, FCR, and MCR)
+at register-relative offsets from the supplied base.
+
+In .q mode, UART registers use an eight-byte stride. With --speed=450, the
+computed divisor is 0x0100; the fixed DLL/register-zero store writes the zero
+low divisor byte at the supplied base, clearing grub_file_verifiers. Other
+UART-derived stores land at subsequent register slots. This is a
+caller-selected destination with fixed UART-derived values, not an
+arbitrary-value write. GRUB's file-open path treats an empty verifier list as
+"no verifiers registered" and returns success, a known fail-open behavior
+(cf. CVE-2025-0622 / Grabit).
+
+The closest root-cause mapping is CWE-822 (Untrusted Pointer Dereference).
+
+== Demonstrated chain ==
+
+  lockdown-active Canonical GRUB
+    -> serial --port=mmio,<grub_file_verifiers_addr>.q targets ordinary RAM
+    -> UART init stores clear the verifier list head
+    -> insmod loads unsigned GRUB module
+    -> benign module command executes
+    -> lockdown still reports y throughout
+
+== Reproduction ==
+
+Environment: QEMU 8.2.2, q35, SMM enabled, TCG, OVMF 2024.02-2ubuntu0.9
+with Microsoft UEFI CA enrolled (standard ms.fd), Ubuntu shim 15.8. Three
+successful runs on enforcing, disposable VMs.
+
+Reproduction requires a FAT boot medium containing the signed shim, the signed
+GRUB, an unsigned native GRUB module (e.g. a minimally patched hello.mod), and
+a grub.cfg containing the precomputed verifier-head address for the exact
+observed image placement.
+
+The configuration for the confirmed image and load address:
+
+  # verify the expected image placement with gdbinfo
+  gdbinfo
+  # gdbinfo prints: dynamic_load_symbols 0x1c776000
+  # ImageBase = 0x1c776000 - 0x1000 = 0x1c775000
+  # grub_file_verifiers RVA = 0x1e1d8
+  # runtime address = 0x1c7931d8
+
+  serial --port=mmio,1c7931d8.q --speed=450 --word=8 --parity=no --stop=1 --rtscts=off
+  sleep 30  # verify gdbinfo placement; terminate if it differs
+  terminal_input --append serial
+  sleep --interruptible 1
+  insmod /ap-marker.mod   # now succeeds; previously rejected
+
+The reproduced grub.cfg does not parse or compute from gdbinfo output. It
+embeds 0x1c7931d8, derived in advance for the confirmed image and observed
+placement. gdbinfo is a placement check: it must report
+dynamic_load_symbols 0x1c776000. If it differs, stop before the input poll.
+This PoC does not automatically adapt to other builds or load addresses.
+
+Controls demonstrated:
+  - Unsigned EFI application directly:       firmware Access Denied
+  - Same unsigned module before serial:      "prohibited by secure boot policy"
+  - Same module after configure-only:        still rejected (no input poll yet)
+  - Same module after input poll:            accepted, executes
+
+Memory observations by the final post-transition checkpoint (QEMU HMP
+read-only xp):
+  - Before input poll: grub_file_verifiers = 0x1c7833e0 (non-null, active)
+  - Final checkpoint:  grub_file_verifiers = 0x0 (cleared)
+  - Adjacent get_time_ms_func at target-8:  0x1c77dadd (unchanged in both)
+  - Subsequent qwords changed consistently with the fixed UART stores; this
+    proof does not claim single-write isolation
+
+== Impact ==
+
+An attacker satisfying the stated prerequisites can execute attacker-supplied
+native GRUB module code inside the admitted, lockdown-active GRUB environment,
+despite firmware having denied an unsigned EFI control and the signed chain
+remaining intact.
+
+A loaded native GRUB module executes in GRUB's address space with that pre-OS
+principal's authority. This breaks the signed-code boundary at the GRUB module
+layer; it is not firmware StartImage execution.
+
+Live reproduction is limited to the exact Canonical-signed image identified
+above in an enforcing disposable QEMU/OVMF environment. This does NOT
+demonstrate physical-hardware execution, persistence, Secure Boot key or SBAT
+modification, automatic OS compromise, sibling-image execution, cross-build
+exploitability, or any effect surviving power-off. The proof stops at benign
+native module execution.
+
+CVSS 3.1: 6.4
+CVSS:3.1/AV:L/AC:H/PR:H/UI:N/S:U/C:H/I:H/A:H
+
+AC:H reflects deployment-specific configuration acceptance, image placement,
+and precomputed target preparation. PR:H scores the coherent
+administrator-controlled route; physical access is not mixed into this vector.
+
+== Prior art ==
+
+The 2025 "Grabit" work (CVE-2025-0622) documents corruption/nulling of
+grub_file_verifiers and GRUB's fail-open empty-verifier-list behavior
+via a distinct use-after-free primitive. This advisory claims no novelty
+for those downstream techniques. The new primitive is that lockdown-active
+GRUB permits attacker-selected serial MMIO to target ordinary RAM,
+producing fixed UART initialization stores that clear security-sensitive
+state.
+
+== Remediation ==
+
+1. In lockdown, reject caller-selected raw MMIO serial bases. If serial
+   input is required under lockdown, allow only platform-described,
+   validated UART resources (e.g. SPCR/ACPI platform tables).
+2. Validate the register span, access width, and memory resource type
+   before any serial register access. Reject ordinary RAM and unknown
+   ranges.
+3. Make file opens fail closed when the authoritative verifier collection
+   is missing or empty while Secure Boot lockdown is active.
+4. Restrict gdbinfo in lockdown as defense in depth (not the primary fix).
+5. Rebuild and sign corrected images, increment the appropriate SBAT
+   generation, and stage revocation only after fixed media is available.
+
+== Timeline ==
+
+- 2026-08-27: vulnerability discovered and reproduced
+- 2026-09-13: public disclosure
+
+== Credit ==
+
+luppa
+
+== References ==
+
+- Public disclosure repository:
+  https://github.com/Luppa90/grub-serial-mmio-lockdown-bypass
+- CVE-2025-0622 / Grabit (prior art for the downstream verifier-clear
+  technique): https://blog.b.horn.uk/posts/grabit/
+- CVE-2022-28735 (closest post-condition precedent, GRUB verifier bypass):
+  https://www.openwall.com/lists/oss-security/2022/06/07/5
+- CVE-2020-7205 (signed GRUB permitting unsigned insmod):
+  https://nvd.nist.gov/vuln/detail/CVE-2020-7205
+- GRUB 2.14 serial manual:
+  https://www.gnu.org/software/grub/manual/grub/html_node/serial.html
+- Upstream MMIO serial patches:
+  https://lists.gnu.org/archive/html/grub-devel/2022-12/msg00038.html

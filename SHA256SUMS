@@ -1,0 +1,5 @@
+fe60312f3b45abe0ef4f7cbe66748237278e205c28709e79957bd315a8467d0f  ADVISORY.txt
+089657acebea32fae6f3da1f38f05dcca27d7bf701f7a9c44e6cf50e13bc7fab  README.md
+f5b0cce38e92642c0cd21fda5c2ba2cb60b89c8d0117282f83c8389330b1fac5  evidence/01-unsigned-efi-firmware-denial.png
+2c1244757e0e4cac50c156c096d052061c233d0d8acb9bb169df6ef413bde8e6  evidence/02-pre-transition-negative-controls.png
+d6314209ed101f3a5a0ea1737ce8ea1d7a9e0ddc80a0fc886855c31bdb1d5c18  evidence/03-post-transition-benign-module.png
