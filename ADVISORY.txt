@@ -1,3 +1,22 @@
+========================================================================
+Post-publication update -- 2026-10-02
+========================================================================
+
+Canonical assigned this issue CVE-2026-97876 and published it in the CVE List:
+
+  https://www.cve.org/CVERecord?id=CVE-2026-97876
+
+The official CVE record references the upstream fix:
+
+  https://gitlab.freedesktop.org/gnu-grub/grub/-/commit/26beaa3b2720fefdc4d04c1ae209b776fe6848d6
+
+The CNA record identifies upstream GNU GRUB 2.12 through versions before 2.16
+as affected. That upstream assessment does not change the narrower live-
+reproduction scope documented below.
+
+Original advisory follows unchanged.
+========================================================================
+
 To:      oss-security@lists.openwall.com
 Subject: GNU GRUB 2.14: serial-MMIO lockdown bypass in Canonical-signed gcdx64.efi
 

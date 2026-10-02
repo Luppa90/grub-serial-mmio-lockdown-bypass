@@ -1,8 +1,22 @@
-# GNU GRUB 2.14 serial-MMIO lockdown bypass
+# CVE-2026-97876: GNU GRUB serial-MMIO lockdown bypass
 
 This repository contains the public advisory and selected evidence for a
 serial-MMIO target-validation flaw reproduced in an exact Canonical-signed GNU
 GRUB image while Secure Boot lockdown remained enabled.
+
+## Publication status
+
+Canonical published this issue as
+[CVE-2026-97876](https://www.cve.org/CVERecord?id=CVE-2026-97876) on
+2026-10-02, with CVSS 3.1 score 6.4 and CWE-822. The original disclosure is
+preserved in the
+[oss-security archive](https://www.openwall.com/lists/oss-security/2026/09/13/5).
+The CVE record also references the
+[upstream fix](https://gitlab.freedesktop.org/gnu-grub/grub/-/commit/26beaa3b2720fefdc4d04c1ae209b776fe6848d6).
+
+The CNA record identifies upstream GNU GRUB 2.12 through versions before 2.16
+as affected. This repository's live-reproduction claims remain deliberately
+narrower: they cover the exact Canonical-signed image identified below.
 
 ## Confirmed scope
 
@@ -11,6 +25,7 @@ GRUB image while Secure Boot lockdown remained enabled.
 - Image SHA-256:
   `dc505a15c1bd97878eede212a052a1bfb2f610176a5401a3679877c536fdcd62`
 - Environment: enforcing disposable QEMU/OVMF; three matching runs
+- CVE: CVE-2026-97876
 - CVSS 3.1: 6.4
   (`CVSS:3.1/AV:L/AC:H/PR:H/UI:N/S:U/C:H/I:H/A:H`)
 - CWE: CWE-822, Untrusted Pointer Dereference
